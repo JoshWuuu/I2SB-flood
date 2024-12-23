@@ -79,7 +79,7 @@ class Diffusion():
 
         return xt_prev
 
-    def ddpm_sampling(self, steps, pred_x0_fn, x1, mask=None, ot_ode=False, log_steps=None, verbose=True):
+    def ddpm_sampling(self, steps, pred_x0_fn, x1, rainfall_emb, mask=None, ot_ode=False, log_steps=None, verbose=True):
         xt = x1.detach().to(self.device)
 
         xs = []
@@ -95,7 +95,7 @@ class Diffusion():
         for prev_step, step in pair_steps:
             assert prev_step < step, f"{prev_step=}, {step=}"
 
-            pred_x0 = pred_x0_fn(xt, step)
+            pred_x0 = pred_x0_fn(xt, step, rainfall_emb)
             xt = self.p_posterior(prev_step, step, xt, pred_x0, ot_ode=ot_ode)
 
             if mask is not None:

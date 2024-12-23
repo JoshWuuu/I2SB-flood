@@ -175,7 +175,7 @@ def download_adm_image256_cond_ckpt(ckpt_dir="data/"):
 def download_ckpt(ckpt_dir="data/"):
     os.makedirs(ckpt_dir, exist_ok=True)
     download_adm_image256_uncond_ckpt(ckpt_dir=ckpt_dir)
-    download_adm_image256_cond_ckpt(ckpt_dir=ckpt_dir)
+    # download_adm_image256_cond_ckpt(ckpt_dir=ckpt_dir)
 
 def build_ckpt_option(opt, log, ckpt_path):
     ckpt_path = Path(ckpt_path)

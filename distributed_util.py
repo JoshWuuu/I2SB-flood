@@ -18,7 +18,7 @@ def init_processes(rank, size, fn, args):
     os.environ['MASTER_ADDR'] = args.master_address
     os.environ['MASTER_PORT'] = '6020'
     torch.cuda.set_device(args.local_rank)
-    dist.init_process_group(backend='nccl', init_method='env://', rank=rank, world_size=size)
+    dist.init_process_group(backend='GLOO', init_method='env://', rank=rank, world_size=size)
     fn(args)
     dist.barrier()
     cleanup()

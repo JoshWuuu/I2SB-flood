@@ -24,6 +24,7 @@ from evaluation import build_resnet50
 from . import util
 from .network import Image256Net
 from .diffusion import Diffusion
+from .embedding import RainfallEmbedder
 
 from ipdb import set_trace as debug
 
@@ -86,6 +87,7 @@ class Runner(object):
         noise_levels = torch.linspace(opt.t0, opt.T, opt.interval, device=opt.device) * opt.interval
         self.net = Image256Net(log, noise_levels=noise_levels, use_fp16=opt.use_fp16, cond=opt.cond_x1)
         self.ema = ExponentialMovingAverage(self.net.parameters(), decay=opt.ema)
+        self.rainfall_emb = RainfallEmbedder(256, 1)
 
         if opt.load:
             checkpoint = torch.load(opt.load, map_location="cpu")
@@ -96,6 +98,7 @@ class Runner(object):
 
         self.net.to(opt.device)
         self.ema.to(opt.device)
+        self.rainfall_emb.to(opt.device)
 
         self.log = log
 
@@ -130,7 +133,7 @@ class Runner(object):
         # tu.save_image((clean_img+1)/2, ".debug/clean.png", nrow=4)
         # tu.save_image((corrupt_img+1)/2, ".debug/corrupt.png", nrow=4)
         # debug()
-
+        # y is rainfall value in this case (24)
         y  = y.detach().to(opt.device)
         x0 = clean_img.detach().to(opt.device)
         x1 = corrupt_img.detach().to(opt.device)
@@ -175,7 +178,8 @@ class Runner(object):
                 xt = self.diffusion.q_sample(step, x0, x1, ot_ode=opt.ot_ode)
                 label = self.compute_label(step, x0, xt)
 
-                pred = net(xt, step, cond=cond)
+                rainfall_emb = self.rainfall_emb(y)
+                pred = net(xt, step, rainfall_emb, cond=cond)
                 assert xt.shape == label.shape == pred.shape
 
                 if mask is not None:
@@ -218,7 +222,7 @@ class Runner(object):
         self.writer.close()
 
     @torch.no_grad()
-    def ddpm_sampling(self, opt, x1, mask=None, cond=None, clip_denoise=False, nfe=None, log_count=10, verbose=True):
+    def ddpm_sampling(self, opt, x1, rainfall_emb, mask=None, cond=None, clip_denoise=False, nfe=None, log_count=10, verbose=True):
 
         # create discrete time steps that split [0, INTERVAL] into NFE sub-intervals.
         # e.g., if NFE=2 & INTERVAL=1000, then STEPS=[0, 500, 999] and 2 network
@@ -242,13 +246,13 @@ class Runner(object):
         with self.ema.average_parameters():
             self.net.eval()
 
-            def pred_x0_fn(xt, step):
+            def pred_x0_fn(xt, step, rainfall_emb):
                 step = torch.full((xt.shape[0],), step, device=opt.device, dtype=torch.long)
-                out = self.net(xt, step, cond=cond)
+                out = self.net(xt, step, rainfall_emb, cond=cond)
                 return self.compute_pred_x0(step, xt, out, clip_denoise=clip_denoise)
 
             xs, pred_x0 = self.diffusion.ddpm_sampling(
-                steps, pred_x0_fn, x1, mask=mask, ot_ode=opt.ot_ode, log_steps=log_steps, verbose=verbose,
+                steps, pred_x0_fn, x1, rainfall_emb, mask=mask, ot_ode=opt.ot_ode, log_steps=log_steps, verbose=verbose,
             )
 
         b, *xdim = x1.shape
@@ -265,9 +269,9 @@ class Runner(object):
         img_clean, img_corrupt, mask, y, cond = self.sample_batch(opt, val_loader, corrupt_method)
 
         x1 = img_corrupt.to(opt.device)
-
+        rainfall_emb = self.rainfall_emb(y)
         xs, pred_x0s = self.ddpm_sampling(
-            opt, x1, mask=mask, cond=cond, clip_denoise=opt.clip_denoise, verbose=opt.global_rank==0
+            opt, x1, rainfall_emb=rainfall_emb, mask=mask, cond=cond, clip_denoise=opt.clip_denoise, verbose=opt.global_rank==0
         )
 
         log.info("Collecting tensors ...")
@@ -280,16 +284,16 @@ class Runner(object):
         batch, len_t, *xdim = xs.shape
         assert img_clean.shape == img_corrupt.shape == (batch, *xdim)
         assert xs.shape == pred_x0s.shape
-        assert y.shape == (batch,)
+        # assert y.shape == (batch,)
         log.info(f"Generated recon trajectories: size={xs.shape}")
 
         def log_image(tag, img, nrow=10):
             self.writer.add_image(it, tag, tu.make_grid((img+1)/2, nrow=nrow)) # [1,1] -> [0,1]
 
-        def log_accuracy(tag, img):
-            pred = self.resnet(img.to(opt.device)) # input range [-1,1]
-            accu = self.accuracy(pred, y.to(opt.device))
-            self.writer.add_scalar(it, tag, accu)
+        # def log_accuracy(tag, img):
+        #     pred = self.resnet(img.to(opt.device)) # input range [-1,1]
+        #     accu = self.accuracy(pred, img_clean.to(opt.device))
+        #     self.writer.add_scalar(it, tag, accu)
 
         log.info("Logging images ...")
         img_recon = xs[:, 0, ...]
@@ -299,10 +303,10 @@ class Runner(object):
         log_image("debug/pred_clean_traj", pred_x0s.reshape(-1, *xdim), nrow=len_t)
         log_image("debug/recon_traj",      xs.reshape(-1, *xdim),      nrow=len_t)
 
-        log.info("Logging accuracies ...")
-        log_accuracy("accuracy/clean",   img_clean)
-        log_accuracy("accuracy/corrupt", img_corrupt)
-        log_accuracy("accuracy/recon",   img_recon)
+        # log.info("Logging accuracies ...")
+        # log_accuracy("accuracy/clean",   img_clean)
+        # log_accuracy("accuracy/corrupt", img_corrupt)
+        # log_accuracy("accuracy/recon",   img_recon)
 
         log.info(f"========== Evaluation finished: iter={it} ==========")
         torch.cuda.empty_cache()

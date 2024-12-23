@@ -5,11 +5,16 @@
 # for I2SB. To view a copy of this license, see the LICENSE file.
 # ---------------------------------------------------------------
 
+import os
 import numpy as np
 import enum
+import pandas as pd 
+import cv2
+from PIL import Image
 
 import torch
 from torch.utils.data import Dataset
+from torchvision import transforms as T
 
 from .jpeg import jpeg_decode, jpeg_encode
 from .blur import Deblurring
@@ -144,3 +149,92 @@ class MixtureCorruptDatasetVal(Dataset):
 
         assert corrupt_img.shape == clean_img.shape, (clean_img.shape, corrupt_img.shape)
         return clean_img, corrupt_img, y
+
+class floodDataset(Dataset):
+    def __init__(self, opt, val=False):
+        super(floodDataset, self).__init__()
+        self.opt = opt
+        dem_path = 'C:\\Users\\User\\Desktop\\dev\\PNG_TUFLOW\\dem.png'
+        self.dem = cv2.imread(dem_path)
+
+        self.flood_path = 'C:\\Users\\User\\Desktop\\dev\\PNG_TUFLOW\\tainan_png'
+
+        rainfall_path = 'C:\\Users\\User\\Desktop\\dev\\PNG_TUFLOW\\scenario_rainfall.csv'
+        rainfall = pd.read_csv(rainfall_path)
+        # remove first row, no 0 row 
+        rainfall = rainfall.iloc[1:, 1:]
+
+        # Initialize lists to store cell values and their positions
+        rainfall_cum_value = []
+        cell_positions = []
+
+        val = False
+        # Iterate through each column
+        for col in rainfall.columns:
+            col_num = int(col.split("_")[1])
+            if (val and col_num not in [5, 13, 16, 26, 36, 46]) or (not val and col_num in [5, 13, 16, 26, 36, 46]):
+                continue
+            cell_values = []
+            # Iterate through each row in the current column
+            for row in range(len(rainfall)):
+                cell_value = rainfall.iloc[row][col]
+                cell_values.append(cell_value)
+                # make it a len 24 list if not append 0 in front
+                temp = [0] * (24 - len(cell_values))
+                temp.extend(cell_values)
+                if len(temp) == 25:
+                    temp = temp[1:]
+                rainfall_cum_value.append(temp)
+                cell_positions.append((col_num, row+1))
+
+        self.rainfall = rainfall_cum_value
+        self.cell_positions = cell_positions
+
+        # add transform , to tensor and normalize
+        self.transform = T.Compose([
+            T.ToTensor(),
+            # T.Lambda(lambda t: (t * 2) - 1)
+        ])
+
+    def __find_image(self, cell_position, flood_path):
+        col, row = cell_position
+        folder_name = f"RF{col:02d}"
+        image_name = f"{folder_name}_d_{row:03d}_00.png"
+        image_path = os.path.join(flood_path, folder_name, image_name)
+        return image_path
+
+    def __len__(self):
+        return len(self.cell_positions)
+
+    def __getitem__(self, index):
+        dem_image = self.dem
+        rainfall = self.rainfall[index]
+
+        rainfall = np.array(rainfall)
+        # rainfall = rainfall.reshape(1, 24)
+        
+        cell_position = self.cell_positions[index]
+
+        image_path = self.__find_image(cell_position, self.flood_path)
+
+        flood_image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+        # remove the fourth channel
+        flood_image = flood_image[:, :, :3]
+        # IF FLOOD image not 256x256, print the shape and the image_path
+        # flood_image = Image.open(image_path).convert('RGB')
+        # flood_image = np.array(flood_image)
+        # print(flood_image.shape, image_path)
+        # convert to RGB if grayscale
+        # if len(flood_image.shape) == 2:
+        #     flood_image = cv2.cvtColor(flood_image, cv2.COLOR_GRAY2RGB)
+        # if len(dem_image.shape) == 2:
+        #     dem_image = cv2.cvtColor(dem_image, cv2.COLOR_GRAY2RGB)
+
+        dem_image = self.transform(dem_image)
+        flood_image = self.transform(flood_image)
+
+        dem_image = (dem_image * 2) - 1
+        flood_image = (flood_image * 2) - 1
+
+        return flood_image, dem_image, rainfall 
+    

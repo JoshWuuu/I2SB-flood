@@ -23,6 +23,7 @@ from torch.multiprocessing import Process
 from logger import Logger
 from distributed_util import init_processes
 from corruption import build_corruption
+from corruption.mixture import floodDataset
 from dataset import imagenet
 from i2sb import Runner, download_ckpt
 
@@ -44,9 +45,9 @@ def create_training_options():
     # --------------- basic ---------------
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed",           type=int,   default=0)
-    parser.add_argument("--name",           type=str,   default=None,        help="experiment ID")
+    parser.add_argument("--name",           type=str,   default='flood-test1',        help="experiment ID")
     parser.add_argument("--ckpt",           type=str,   default=None,        help="resumed checkpoint name")
-    parser.add_argument("--gpu",            type=int,   default=None,        help="set only if you wish to run on a particular device")
+    parser.add_argument("--gpu",            type=int,   default=0,        help="set only if you wish to run on a particular device")
     parser.add_argument("--n-gpu-per-node", type=int,   default=1,           help="number of gpu on each node")
     parser.add_argument("--master-address", type=str,   default='localhost', help="address for master")
     parser.add_argument("--node-rank",      type=int,   default=0,           help="the index of node")
@@ -55,21 +56,21 @@ def create_training_options():
 
     # --------------- SB model ---------------
     parser.add_argument("--image-size",     type=int,   default=256)
-    parser.add_argument("--corrupt",        type=str,   default=None,        help="restoration task")
+    parser.add_argument("--corrupt",        type=str,   default='mixture',        help="restoration task")
     parser.add_argument("--t0",             type=float, default=1e-4,        help="sigma start time in network parametrization")
     parser.add_argument("--T",              type=float, default=1.,          help="sigma end time in network parametrization")
     parser.add_argument("--interval",       type=int,   default=1000,        help="number of interval")
-    parser.add_argument("--beta-max",       type=float, default=0.3,         help="max diffusion for the diffusion model")
+    parser.add_argument("--beta-max",       type=float, default=1.0,         help="max diffusion for the diffusion model")
     # parser.add_argument("--beta-min",       type=float, default=0.1)
     parser.add_argument("--ot-ode",         action="store_true",             help="use OT-ODE model")
     parser.add_argument("--clip-denoise",   action="store_true",             help="clamp predicted image to [-1,1] at each")
 
     # optional configs for conditional network
-    parser.add_argument("--cond-x1",        action="store_true",             help="conditional the network on degraded images")
+    parser.add_argument("--cond-x1",        action="store_true",  default=True,            help="conditional the network on degraded images")
     parser.add_argument("--add-x1-noise",   action="store_true",             help="add noise to conditional network")
 
     # --------------- optimizer and loss ---------------
-    parser.add_argument("--batch-size",     type=int,   default=256)
+    parser.add_argument("--batch-size",     type=int,   default=16)
     parser.add_argument("--microbatch",     type=int,   default=2,           help="accumulate gradient over microbatch until full batch-size")
     parser.add_argument("--num-itr",        type=int,   default=1000000,     help="training iteration")
     parser.add_argument("--lr",             type=float, default=5e-5,        help="learning rate")
@@ -126,16 +127,18 @@ def main(opt):
     if opt.seed is not None:
         set_seed(opt.seed + opt.global_rank)
 
-    # build imagenet dataset
-    train_dataset = imagenet.build_lmdb_dataset(opt, log, train=True)
-    val_dataset   = imagenet.build_lmdb_dataset(opt, log, train=False)
-    # note: images should be normalized to [-1,1] for corruption methods to work properly
+    # # build imagenet dataset
+    # train_dataset = imagenet.build_lmdb_dataset(opt, log, train=True)
+    # val_dataset   = imagenet.build_lmdb_dataset(opt, log, train=False)
+    # # note: images should be normalized to [-1,1] for corruption methods to work properly
 
-    if opt.corrupt == "mixture":
-        import corruption.mixture as mix
-        train_dataset = mix.MixtureCorruptDatasetTrain(opt, train_dataset)
-        val_dataset = mix.MixtureCorruptDatasetVal(opt, val_dataset)
+    # if opt.corrupt == "mixture":
+    #     import corruption.mixture as mix
+    #     train_dataset = mix.MixtureCorruptDatasetTrain(opt, train_dataset)
+    #     val_dataset = mix.MixtureCorruptDatasetVal(opt, val_dataset)
 
+    train_dataset = floodDataset(opt, val=False)
+    val_dataset = floodDataset(opt, val=True)
     # build corruption method
     corrupt_method = build_corruption(opt, log)
 
