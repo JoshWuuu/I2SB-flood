@@ -151,15 +151,22 @@ class MixtureCorruptDatasetVal(Dataset):
         return clean_img, corrupt_img, y
 
 class floodDataset(Dataset):
-    def __init__(self, opt, val=False):
+    def __init__(self, opt, val=False, test=False):
         super(floodDataset, self).__init__()
         self.opt = opt
-        dem_path = 'C:\\Users\\User\\Desktop\\dev\\PNG_TUFLOW\\dem.png'
+        dem_path = 'C:\\Users\\User\\Desktop\\dev\\train\\dem.png'
         self.dem = cv2.imread(dem_path)
+        self.dem = cv2.cvtColor(self.dem, cv2.COLOR_BGR2GRAY)
+        self.dem = cv2.cvtColor(self.dem, cv2.COLOR_GRAY2BGR)
+        self.test = test
 
-        self.flood_path = 'C:\\Users\\User\\Desktop\\dev\\PNG_TUFLOW\\tainan_png'
+        self.flood_path = 'C:\\Users\\User\\Desktop\\dev\\train\\tainan_png'
 
-        rainfall_path = 'C:\\Users\\User\\Desktop\\dev\\PNG_TUFLOW\\scenario_rainfall.csv'
+        rainfall_path = 'C:\\Users\\User\\Desktop\\dev\\train\\train.csv'
+        if test:
+            rainfall_path = 'C:\\Users\\User\\Desktop\\dev\\test\\test.csv'
+            self.flood_path = 'C:\\Users\\User\\Desktop\\dev\\test\\TEST_png'
+
         rainfall = pd.read_csv(rainfall_path)
         # remove first row, no 0 row 
         rainfall = rainfall.iloc[1:, 1:]
@@ -172,18 +179,18 @@ class floodDataset(Dataset):
         # Iterate through each column
         for col in rainfall.columns:
             col_num = int(col.split("_")[1])
-            if (val and col_num not in [5, 13, 16, 26, 36, 46]) or (not val and col_num in [5, 13, 16, 26, 36, 46]):
+            if (val and col_num not in [2]) or (not val and col_num in []):
                 continue
             cell_values = []
             # Iterate through each row in the current column
             for row in range(len(rainfall)):
                 cell_value = rainfall.iloc[row][col]
-                cell_values.append(cell_value)
+                cell_values.append(np.floor(cell_value))
                 # make it a len 24 list if not append 0 in front
                 temp = [0] * (24 - len(cell_values))
                 temp.extend(cell_values)
-                if len(temp) == 25:
-                    temp = temp[1:]
+                # if len(temp) == 25:
+                #     temp = temp[1:]
                 rainfall_cum_value.append(temp)
                 cell_positions.append((col_num, row+1))
 
@@ -198,7 +205,15 @@ class floodDataset(Dataset):
 
     def __find_image(self, cell_position, flood_path):
         col, row = cell_position
-        folder_name = f"RF{col:02d}"
+        if col < 100:
+            folder_name = f"RF{col:02d}"
+        else:
+            folder_name = f"RF{col}"
+        if self.test:
+            if col < 100:
+                folder_name = f"RF{col:02d}"
+            else:
+                folder_name = f"RF{col}"
         image_name = f"{folder_name}_d_{row:03d}_00.png"
         image_path = os.path.join(flood_path, folder_name, image_name)
         return image_path
@@ -210,7 +225,7 @@ class floodDataset(Dataset):
         dem_image = self.dem
         rainfall = self.rainfall[index]
 
-        rainfall = np.array(rainfall)
+        rainfall = np.array(rainfall, dtype=np.int64)
         # rainfall = rainfall.reshape(1, 24)
         
         cell_position = self.cell_positions[index]
@@ -218,8 +233,11 @@ class floodDataset(Dataset):
         image_path = self.__find_image(cell_position, self.flood_path)
 
         flood_image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
+        
         # remove the fourth channel
-        flood_image = flood_image[:, :, :3]
+        flood_image = flood_image[:, :, 2]
+        # flood_image = cv2.cvtColor(flood_image, cv2.COLOR_BGR2GRAY)
+        flood_image = cv2.cvtColor(flood_image, cv2.COLOR_GRAY2BGR)
         # IF FLOOD image not 256x256, print the shape and the image_path
         # flood_image = Image.open(image_path).convert('RGB')
         # flood_image = np.array(flood_image)
@@ -236,5 +254,5 @@ class floodDataset(Dataset):
         dem_image = (dem_image * 2) - 1
         flood_image = (flood_image * 2) - 1
 
-        return flood_image, dem_image, rainfall 
+        return flood_image, dem_image, rainfall, image_path
     

@@ -45,8 +45,8 @@ def create_training_options():
     # --------------- basic ---------------
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed",           type=int,   default=0)
-    parser.add_argument("--name",           type=str,   default='flood-test1',        help="experiment ID")
-    parser.add_argument("--ckpt",           type=str,   default=None,        help="resumed checkpoint name")
+    parser.add_argument("--name",           type=str,   default='flood-test2',        help="experiment ID")
+    parser.add_argument("--ckpt",           type=str,   default="C:\\Users\\User\\Desktop\\dev\\I2SB-flood\\results\\flood-test1",        help="resumed checkpoint name")
     parser.add_argument("--gpu",            type=int,   default=0,        help="set only if you wish to run on a particular device")
     parser.add_argument("--n-gpu-per-node", type=int,   default=1,           help="number of gpu on each node")
     parser.add_argument("--master-address", type=str,   default='localhost', help="address for master")
@@ -70,19 +70,19 @@ def create_training_options():
     parser.add_argument("--add-x1-noise",   action="store_true",             help="add noise to conditional network")
 
     # --------------- optimizer and loss ---------------
-    parser.add_argument("--batch-size",     type=int,   default=16)
-    parser.add_argument("--microbatch",     type=int,   default=2,           help="accumulate gradient over microbatch until full batch-size")
+    parser.add_argument("--batch-size",     type=int,   default=4)
+    parser.add_argument("--microbatch",     type=int,   default=1,           help="accumulate gradient over microbatch until full batch-size")
     parser.add_argument("--num-itr",        type=int,   default=1000000,     help="training iteration")
     parser.add_argument("--lr",             type=float, default=5e-5,        help="learning rate")
     parser.add_argument("--lr-gamma",       type=float, default=0.99,        help="learning rate decay ratio")
     parser.add_argument("--lr-step",        type=int,   default=1000,        help="learning rate decay step size")
     parser.add_argument("--l2-norm",        type=float, default=0.0)
-    parser.add_argument("--ema",            type=float, default=0.99)
+    parser.add_argument("--ema",            type=float, default=0.999)
 
     # --------------- path and logging ---------------
     parser.add_argument("--dataset-dir",    type=Path,  default="/dataset",  help="path to LMDB dataset")
     parser.add_argument("--log-dir",        type=Path,  default=".log",      help="path to log std outputs and writer data")
-    parser.add_argument("--log-writer",     type=str,   default=None,        help="log writer: can be tensorbard, wandb, or None")
+    parser.add_argument("--log-writer",     type=str,   default='tensorbard',        help="log writer: can be tensorbard, wandb, or None")
     parser.add_argument("--wandb-api-key",  type=str,   default=None,        help="unique API key of your W&B account; see https://wandb.ai/authorize")
     parser.add_argument("--wandb-user",     type=str,   default=None,        help="user name of your W&B account")
 
@@ -152,7 +152,7 @@ if __name__ == '__main__':
     assert opt.corrupt is not None
 
     # one-time download: ADM checkpoint
-    download_ckpt("data/")
+    # download_ckpt("data/")
 
     if opt.distributed:
         size = opt.n_gpu_per_node

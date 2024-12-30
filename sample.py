@@ -30,6 +30,7 @@ from i2sb import ckpt_util
 
 import colored_traceback.always
 from ipdb import set_trace as debug
+from corruption.mixture import floodDataset
 
 RESULT_DIR = Path("results")
 
@@ -100,7 +101,7 @@ def build_val_dataset(opt, log, corrupt_type):
     return val_dataset
 
 def get_recon_imgs_fn(opt, nfe):
-    sample_dir = RESULT_DIR / opt.ckpt / "samples_nfe{}{}".format(
+    sample_dir = RESULT_DIR / opt.ckpt / "test3_nfe{}{}".format(
         nfe, "_clip" if opt.clip_denoise else ""
     )
     os.makedirs(sample_dir, exist_ok=True)
@@ -116,7 +117,9 @@ def compute_batch(ckpt_opt, corrupt_type, corrupt_method, out):
         corrupt_img = clean_img * (1. - mask) + mask
         x1          = clean_img * (1. - mask) + mask * torch.randn_like(clean_img)
     elif corrupt_type == "mixture":
-        clean_img, corrupt_img, y = out
+        clean_img, corrupt_img, y, image_name = out
+        x1 = corrupt_img.to(opt.device)
+        y = y.to(opt.device)
         mask = None
     else:
         clean_img, y = out
@@ -128,7 +131,7 @@ def compute_batch(ckpt_opt, corrupt_type, corrupt_method, out):
     if ckpt_opt.add_x1_noise: # only for decolor
         x1 = x1 + torch.randn_like(x1)
 
-    return corrupt_img, x1, mask, cond, y
+    return corrupt_img, x1, mask, cond, y, image_name
 
 @torch.no_grad()
 def main(opt):
@@ -143,7 +146,7 @@ def main(opt):
     corrupt_method = build_corruption(opt, log, corrupt_type=corrupt_type)
 
     # build imagenet val dataset
-    val_dataset = build_val_dataset(opt, log, corrupt_type)
+    val_dataset = floodDataset(opt, test=True)
     n_samples = len(val_dataset)
 
     # build dataset per gpu and loader
@@ -170,44 +173,52 @@ def main(opt):
     num = 0
     for loader_itr, out in enumerate(val_loader):
 
-        corrupt_img, x1, mask, cond, y = compute_batch(ckpt_opt, corrupt_type, corrupt_method, out)
-
+        corrupt_img, x1, mask, cond, y, image_name = compute_batch(ckpt_opt, corrupt_type, corrupt_method, out)
+        
         xs, _ = runner.ddpm_sampling(
-            ckpt_opt, x1, mask=mask, cond=cond, clip_denoise=opt.clip_denoise, nfe=nfe, verbose=opt.n_gpu_per_node==1
+            ckpt_opt, x1, y, mask=mask, cond=cond, clip_denoise=opt.clip_denoise, nfe=nfe, verbose=opt.n_gpu_per_node==1
         )
         recon_img = xs[:, 0, ...].to(opt.device)
 
         assert recon_img.shape == corrupt_img.shape
 
-        if loader_itr == 0 and opt.global_rank == 0: # debug
-            os.makedirs(".debug", exist_ok=True)
-            tu.save_image((corrupt_img+1)/2, ".debug/corrupt.png")
-            tu.save_image((recon_img+1)/2, ".debug/recon.png")
-            log.info("Saved debug images!")
+        # if loader_itr == 0 and opt.global_rank == 0: # debug
+        #     os.makedirs(".debug", exist_ok=True)
+        #     # tu.save_image((corrupt_img+1)/2, ".debug/corrupt.png")
+        #     # tu.save_image((recon_img+1)/2, ".debug/recon.png")
+        #     log.info("Saved debug images!")
+
+        for i in range(len(recon_img)):
+            rec = recon_img[i]
+            rec = (rec + 1) / 2
+            # get  the  last \\ 
+            path = image_name[i].split("\\")[-1]
+            save_path = recon_imgs_fn.parent / f"recon_{path}.png"
+            tu.save_image(rec, save_path)
 
         # [-1,1]
-        gathered_recon_img = collect_all_subset(recon_img, log)
-        recon_imgs.append(gathered_recon_img)
+    #     gathered_recon_img = collect_all_subset(recon_img, log)
+    #     recon_imgs.append(gathered_recon_img)
 
-        y = y.to(opt.device)
-        gathered_y = collect_all_subset(y, log)
-        ys.append(gathered_y)
+    #     y = y.to(opt.device)
+    #     gathered_y = collect_all_subset(y, log)
+    #     ys.append(gathered_y)
 
-        num += len(gathered_recon_img)
-        log.info(f"Collected {num} recon images!")
-        dist.barrier()
+    #     num += len(gathered_recon_img)
+    #     log.info(f"Collected {num} recon images!")
+    #     dist.barrier()
 
-    del runner
+    # del runner
 
-    arr = torch.cat(recon_imgs, axis=0)[:n_samples]
-    label_arr = torch.cat(ys, axis=0)[:n_samples]
+    # arr = torch.cat(recon_imgs, axis=0)[:n_samples]
+    # label_arr = torch.cat(ys, axis=0)[:n_samples]
 
-    if opt.global_rank == 0:
-        torch.save({"arr": arr, "label_arr": label_arr}, recon_imgs_fn)
-        log.info(f"Save at {recon_imgs_fn}")
-    dist.barrier()
+    # if opt.global_rank == 0:
+    #     torch.save({"arr": arr, "label_arr": label_arr}, recon_imgs_fn)
+    #     log.info(f"Save at {recon_imgs_fn}")
+    # dist.barrier()
 
-    log.info(f"Sampling complete! Collect recon_imgs={arr.shape}, ys={label_arr.shape}")
+    # log.info(f"Sampling complete! Collect recon_imgs={arr.shape}, ys={label_arr.shape}")
 
 
 if __name__ == '__main__':
@@ -224,9 +235,9 @@ if __name__ == '__main__':
     parser.add_argument("--partition",      type=str,  default=None,        help="e.g., '0_4' means the first 25% of the dataset")
 
     # sample
-    parser.add_argument("--batch-size",     type=int,  default=32)
-    parser.add_argument("--ckpt",           type=str,  default=None,        help="the checkpoint name from which we wish to sample")
-    parser.add_argument("--nfe",            type=int,  default=None,        help="sampling steps")
+    parser.add_argument("--batch-size",     type=int,  default=4)
+    parser.add_argument("--ckpt",           type=str,  default='C:\\Users\\User\\Desktop\\dev\\I2SB-flood\\results\\flood-test1',        help="the checkpoint name from which we wish to sample")
+    parser.add_argument("--nfe",            type=int,  default=200,        help="sampling steps")
     parser.add_argument("--clip-denoise",   action="store_true",            help="clamp predicted image to [-1,1] at each")
     parser.add_argument("--use-fp16",       action="store_true",            help="use fp16 network weight for faster sampling")
 
@@ -239,7 +250,7 @@ if __name__ == '__main__':
     opt.update(vars(arg))
 
     # one-time download: ADM checkpoint
-    download_ckpt("data/")
+    # download_ckpt("data/")
 
     set_seed(opt.seed)
 

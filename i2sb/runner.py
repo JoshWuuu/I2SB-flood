@@ -95,6 +95,8 @@ class Runner(object):
             log.info(f"[Net] Loaded network ckpt: {opt.load}!")
             self.ema.load_state_dict(checkpoint["ema"])
             log.info(f"[Ema] Loaded ema ckpt: {opt.load}!")
+            self.rainfall_emb.load_state_dict(checkpoint['embedding'])
+            log.info(f"[Embedding] Loaded embedding ckpt: {opt.load}!")
 
         self.net.to(opt.device)
         self.ema.to(opt.device)
@@ -117,7 +119,7 @@ class Runner(object):
 
     def sample_batch(self, opt, loader, corrupt_method):
         if opt.corrupt == "mixture":
-            clean_img, corrupt_img, y = next(loader)
+            clean_img, corrupt_img, y, image_name = next(loader)
             mask = None
         elif "inpaint" in opt.corrupt:
             clean_img, y = next(loader)
@@ -153,7 +155,7 @@ class Runner(object):
         self.writer = util.build_log_writer(opt)
         log = self.log
 
-        net = DDP(self.net, device_ids=[opt.device])
+        net = self.net
         ema = self.ema
         optimizer, sched = build_optimizer_sched(opt, net, log)
 
@@ -203,10 +205,11 @@ class Runner(object):
             if it % 10 == 0:
                 self.writer.add_scalar(it, 'loss', loss.detach())
 
-            if it % 5000 == 0:
+            if it % 500 == 0:
                 if opt.global_rank == 0:
                     torch.save({
                         "net": self.net.state_dict(),
+                        'embedding': self.rainfall_emb.state_dict(),
                         "ema": ema.state_dict(),
                         "optimizer": optimizer.state_dict(),
                         "sched": sched.state_dict() if sched is not None else sched,
@@ -222,7 +225,7 @@ class Runner(object):
         self.writer.close()
 
     @torch.no_grad()
-    def ddpm_sampling(self, opt, x1, rainfall_emb, mask=None, cond=None, clip_denoise=False, nfe=None, log_count=10, verbose=True):
+    def ddpm_sampling(self, opt, x1, y, mask=None, cond=None, clip_denoise=False, nfe=None, log_count=10, verbose=True):
 
         # create discrete time steps that split [0, INTERVAL] into NFE sub-intervals.
         # e.g., if NFE=2 & INTERVAL=1000, then STEPS=[0, 500, 999] and 2 network
@@ -251,6 +254,7 @@ class Runner(object):
                 out = self.net(xt, step, rainfall_emb, cond=cond)
                 return self.compute_pred_x0(step, xt, out, clip_denoise=clip_denoise)
 
+            rainfall_emb = self.rainfall_emb(y)
             xs, pred_x0 = self.diffusion.ddpm_sampling(
                 steps, pred_x0_fn, x1, rainfall_emb, mask=mask, ot_ode=opt.ot_ode, log_steps=log_steps, verbose=verbose,
             )
@@ -269,9 +273,8 @@ class Runner(object):
         img_clean, img_corrupt, mask, y, cond = self.sample_batch(opt, val_loader, corrupt_method)
 
         x1 = img_corrupt.to(opt.device)
-        rainfall_emb = self.rainfall_emb(y)
         xs, pred_x0s = self.ddpm_sampling(
-            opt, x1, rainfall_emb=rainfall_emb, mask=mask, cond=cond, clip_denoise=opt.clip_denoise, verbose=opt.global_rank==0
+            opt, x1, y, mask=mask, cond=cond, clip_denoise=opt.clip_denoise, verbose=opt.global_rank==0
         )
 
         log.info("Collecting tensors ...")
