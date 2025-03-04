@@ -176,9 +176,10 @@ def main(opt):
         corrupt_img, x1, mask, cond, y, image_name = compute_batch(ckpt_opt, corrupt_type, corrupt_method, out)
         
         xs, _ = runner.ddpm_sampling(
-            ckpt_opt, x1, y, mask=mask, cond=cond, clip_denoise=opt.clip_denoise, nfe=nfe, verbose=opt.n_gpu_per_node==1
+            ckpt_opt, x1, y, mask=mask, cond=cond, clip_denoise=opt.clip_denoise, nfe=nfe, verbose=opt.n_gpu_per_node==1, eval=True
         )
-        recon_img = xs[:, 0, ...].to(opt.device)
+        # recon_img = xs[:, 0, ...].to(opt.device)
+        recon_img = xs
 
         assert recon_img.shape == corrupt_img.shape
 
@@ -228,16 +229,17 @@ if __name__ == '__main__':
     parser.add_argument("--master-address", type=str,  default='localhost', help="address for master")
     parser.add_argument("--node-rank",      type=int,  default=0,           help="the index of node")
     parser.add_argument("--num-proc-node",  type=int,  default=1,           help="The number of nodes in multi node env")
-
+    parser.add_argument("--latent-space", action="store_true", default=False, help="use latent space model")
+    parser.add_argument("--eval",        action="store_true", default=True, help="")
     # data
     parser.add_argument("--image-size",     type=int,  default=256)
     parser.add_argument("--dataset-dir",    type=Path, default="/dataset",  help="path to LMDB dataset")
     parser.add_argument("--partition",      type=str,  default=None,        help="e.g., '0_4' means the first 25% of the dataset")
 
     # sample
-    parser.add_argument("--batch-size",     type=int,  default=4)
-    parser.add_argument("--ckpt",           type=str,  default='C:\\Users\\User\\Desktop\\dev\\I2SB-flood\\results\\flood-test1',        help="the checkpoint name from which we wish to sample")
-    parser.add_argument("--nfe",            type=int,  default=200,        help="sampling steps")
+    parser.add_argument("--batch-size",     type=int,  default=20)
+    parser.add_argument("--ckpt",           type=str,  default='C:\\Users\\User\\Desktop\\dev\\I2SB-flood\\results\\flood-latent-new-b4',        help="the checkpoint name from which we wish to sample")
+    parser.add_argument("--nfe",            type=int,  default=1,        help="sampling steps")
     parser.add_argument("--clip-denoise",   action="store_true",            help="clamp predicted image to [-1,1] at each")
     parser.add_argument("--use-fp16",       action="store_true",            help="use fp16 network weight for faster sampling")
 

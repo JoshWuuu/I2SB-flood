@@ -45,24 +45,27 @@ def create_training_options():
     # --------------- basic ---------------
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed",           type=int,   default=0)
-    parser.add_argument("--name",           type=str,   default='flood-test2',        help="experiment ID")
-    parser.add_argument("--ckpt",           type=str,   default="C:\\Users\\User\\Desktop\\dev\\I2SB-flood\\results\\flood-test1",        help="resumed checkpoint name")
+    parser.add_argument("--name",           type=str,   default='flood-latent-new-b4',        help="experiment ID")
+    parser.add_argument("--ckpt",           type=str,   default=None,        help="resumed checkpoint name")
     parser.add_argument("--gpu",            type=int,   default=0,        help="set only if you wish to run on a particular device")
     parser.add_argument("--n-gpu-per-node", type=int,   default=1,           help="number of gpu on each node")
     parser.add_argument("--master-address", type=str,   default='localhost', help="address for master")
     parser.add_argument("--node-rank",      type=int,   default=0,           help="the index of node")
     parser.add_argument("--num-proc-node",  type=int,   default=1,           help="The number of nodes in multi node env")
+    parser.add_argument("--eval",           action="store_true", default=False,         help="evaluation mode")
     # parser.add_argument("--amp",            action="store_true")
 
     # --------------- SB model ---------------
     parser.add_argument("--image-size",     type=int,   default=256)
+    parser.add_argument("--latent-space", action="store_true", default=True, help="use latent space model")
+    parser.add_argument("--normalize-latent", action="store_true", default=False, help="normalize latent space")
     parser.add_argument("--corrupt",        type=str,   default='mixture',        help="restoration task")
     parser.add_argument("--t0",             type=float, default=1e-4,        help="sigma start time in network parametrization")
     parser.add_argument("--T",              type=float, default=1.,          help="sigma end time in network parametrization")
     parser.add_argument("--interval",       type=int,   default=1000,        help="number of interval")
-    parser.add_argument("--beta-max",       type=float, default=1.0,         help="max diffusion for the diffusion model")
+    parser.add_argument("--beta-max",       type=float, default=1.5,         help="max diffusion for the diffusion model")
     # parser.add_argument("--beta-min",       type=float, default=0.1)
-    parser.add_argument("--ot-ode",         action="store_true",             help="use OT-ODE model")
+    parser.add_argument("--ot-ode",         action="store_true",  default=False,           help="use OT-ODE model")
     parser.add_argument("--clip-denoise",   action="store_true",             help="clamp predicted image to [-1,1] at each")
 
     # optional configs for conditional network
@@ -71,7 +74,7 @@ def create_training_options():
 
     # --------------- optimizer and loss ---------------
     parser.add_argument("--batch-size",     type=int,   default=4)
-    parser.add_argument("--microbatch",     type=int,   default=1,           help="accumulate gradient over microbatch until full batch-size")
+    parser.add_argument("--microbatch",     type=int,   default=4,           help="accumulate gradient over microbatch until full batch-size")
     parser.add_argument("--num-itr",        type=int,   default=1000000,     help="training iteration")
     parser.add_argument("--lr",             type=float, default=5e-5,        help="learning rate")
     parser.add_argument("--lr-gamma",       type=float, default=0.99,        help="learning rate decay ratio")

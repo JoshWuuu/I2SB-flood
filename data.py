@@ -27,7 +27,7 @@ for col in rainfall.columns:
         cell_value = rainfall.iloc[row][col]
         cell_values.append(cell_value)
         # make it a len 24 list if not append 0 in front
-        temp = [0] * (25 - len(cell_values))
+        temp = [0] * (24 - len(cell_values))
         temp.extend(cell_values)
         rainfall_cum_value.append(temp)
         cell_positions.append((col_num, row+1))
@@ -38,11 +38,6 @@ for col in rainfall.columns:
 print(rainfall_cum_value[0:10])
 print(cell_positions[0:10])
 print(len(rainfall_cum_value))
-
-for cell_posi in rainfall_cum_value:
-    # print(len(cell_posi))
-    if len(cell_posi) == 26:
-        print(cell_posi)
 
 flood_path = 'C:\\Users\\User\\Desktop\\dev\\PNG_TUFLOW\\tainan_png'
 

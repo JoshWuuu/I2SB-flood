@@ -17,13 +17,18 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch_ema import ExponentialMovingAverage
 import torchvision.utils as tu
 import torchmetrics
+from tqdm import tqdm
 
 import distributed_util as dist_util
 from evaluation import build_resnet50
 
 from . import util
 from .network import Image256Net
-from .diffusion import Diffusion
+from .diffusion import Diffusion, disabled_train, create_model_config
+from i2sb.VQGAN.vqgan import VQModel
+from i2sb.base.modules.encoders.modules import SpatialRescaler
+from torch.utils.data import DataLoader
+from corruption.mixture import floodDataset
 from .embedding import RainfallEmbedder
 
 from ipdb import set_trace as debug
@@ -72,6 +77,19 @@ class Runner(object):
     def __init__(self, opt, log, save_opt=True):
         super(Runner,self).__init__()
 
+        self.opt = opt
+        self.model_config = create_model_config()
+        if opt.latent_space:
+            self.vqgan = VQModel(**vars(self.model_config.VQGAN.params)).eval()
+            self.vqgan.train = disabled_train
+            for param in self.vqgan.parameters():
+                param.requires_grad = False
+            print(f"load vqgan from {self.model_config.VQGAN.params.ckpt_path}")
+            
+            self.cond_stage_model = SpatialRescaler(**vars(self.model_config.CondStageParams))
+            self.vqgan.to(opt.device)
+            self.cond_stage_model.to(opt.device)
+
         # Save opt.
         if save_opt:
             opt_pkl_path = opt.ckpt_path / "options.pkl"
@@ -97,6 +115,12 @@ class Runner(object):
             log.info(f"[Ema] Loaded ema ckpt: {opt.load}!")
             self.rainfall_emb.load_state_dict(checkpoint['embedding'])
             log.info(f"[Embedding] Loaded embedding ckpt: {opt.load}!")
+            if opt.normalize_latent:
+                self.net.ori_latent_mean = checkpoint["ori_latent_mean"]
+                self.net.ori_latent_std = checkpoint["ori_latent_std"]
+                self.net.cond_latent_mean = checkpoint["cond_latent_mean"]
+                self.net.cond_latent_std = checkpoint["cond_latent_std"]
+                log.info(f"[Latent] Loaded latent mean/std ckpt: {opt.load}!")
 
         self.net.to(opt.device)
         self.ema.to(opt.device)
@@ -104,6 +128,123 @@ class Runner(object):
 
         self.log = log
 
+        if opt.eval:
+            self.net.ori_latent_mean = self.net.ori_latent_mean.to(opt.device)
+            self.net.ori_latent_std = self.net.ori_latent_std.to(opt.device)
+            self.net.cond_latent_mean = self.net.cond_latent_mean.to(opt.device)
+            self.net.cond_latent_std = self.net.cond_latent_std.to(opt.device)
+
+    def logger(self, msg, **kwargs):
+        print(msg, **kwargs)
+
+    def get_latent_mean_std(self):
+        train_dataset = floodDataset(True)
+        train_loader = DataLoader(train_dataset,
+                                  batch_size=128,
+                                  shuffle=True,
+                                  num_workers=8,
+                                  drop_last=True)
+
+        total_ori_mean = None
+        total_ori_var = None
+        total_cond_mean = None
+        total_cond_var = None
+        # max_batch_num = 30000 // self.config.data.train.batch_size
+
+        def calc_mean(batch, total_ori_mean=None, total_cond_mean=None):
+            (x, x_cond, _) = batch
+            x = x.to(self.opt.device)
+            x_cond = x_cond.to(self.opt.device)
+
+            x_latent = self.vqgan.encoder(x)
+            x_cond_latent = self.vqgan.encoder(x_cond)
+            x_mean = x_latent.mean(axis=[0, 2, 3], keepdim=True)
+            total_ori_mean = x_mean if total_ori_mean is None else x_mean + total_ori_mean
+
+            x_cond_mean = x_cond_latent.mean(axis=[0, 2, 3], keepdim=True)
+            total_cond_mean = x_cond_mean if total_cond_mean is None else x_cond_mean + total_cond_mean
+            return total_ori_mean, total_cond_mean
+
+        def calc_var(batch, ori_latent_mean=None, cond_latent_mean=None, total_ori_var=None, total_cond_var=None):
+            (x, x_cond, _) = batch
+            x = x.to(self.opt.device)
+            x_cond = x_cond.to(self.opt.device)
+
+            x_latent = self.vqgan.encoder(x)
+            x_cond_latent = self.vqgan.encoder(x_cond)
+            x_var = ((x_latent - ori_latent_mean) ** 2).mean(axis=[0, 2, 3], keepdim=True)
+            total_ori_var = x_var if total_ori_var is None else x_var + total_ori_var
+
+            x_cond_var = ((x_cond_latent - cond_latent_mean) ** 2).mean(axis=[0, 2, 3], keepdim=True)
+            total_cond_var = x_cond_var if total_cond_var is None else x_cond_var + total_cond_var
+            return total_ori_var, total_cond_var
+
+        self.logger(f"start calculating latent mean")
+        batch_count = 0
+        for train_batch in tqdm(train_loader, total=len(train_loader), smoothing=0.01):
+            # if batch_count >= max_batch_num:
+            #     break
+            batch_count += 1
+            total_ori_mean, total_cond_mean = calc_mean(train_batch, total_ori_mean, total_cond_mean)
+
+        ori_latent_mean = total_ori_mean / batch_count
+        self.net.ori_latent_mean = ori_latent_mean
+
+        cond_latent_mean = total_cond_mean / batch_count
+        self.net.cond_latent_mean = cond_latent_mean
+
+        self.logger(f"start calculating latent std")
+        batch_count = 0
+        for train_batch in tqdm(train_loader, total=len(train_loader), smoothing=0.01):
+            # if batch_count >= max_batch_num:
+            #     break
+            batch_count += 1
+            total_ori_var, total_cond_var = calc_var(train_batch,
+                                                     ori_latent_mean=ori_latent_mean,
+                                                     cond_latent_mean=cond_latent_mean,
+                                                     total_ori_var=total_ori_var,
+                                                     total_cond_var=total_cond_var)
+            # break
+
+        ori_latent_var = total_ori_var / batch_count
+        cond_latent_var = total_cond_var / batch_count
+
+        self.net.ori_latent_std = torch.sqrt(ori_latent_var)
+        self.net.cond_latent_std = torch.sqrt(cond_latent_var)
+        # self.logger(self.net.ori_latent_mean)
+        # self.logger(self.net.ori_latent_std)
+        # self.logger(self.net.cond_latent_mean)
+        # self.logger(self.net.cond_latent_std)
+    
+    @torch.no_grad()
+    def encode(self, x, cond=True):
+        normalize = self.opt.normalize_latent 
+        model = self.vqgan
+        x_latent = model.encoder(x)
+        if not self.model_config.latent_before_quant_conv:
+            x_latent = model.quant_conv(x_latent)
+        if normalize:
+            if cond:
+                x_latent = (x_latent - self.net.cond_latent_mean) / self.net.cond_latent_std
+            else:
+                x_latent = (x_latent - self.net.ori_latent_mean) / self.net.ori_latent_std
+        return x_latent
+
+    @torch.no_grad()
+    def decode(self, x_latent, cond=True):
+        normalize = self.opt.normalize_latent
+        if normalize:
+            if cond:
+                x_latent = x_latent * self.net.cond_latent_std + self.net.cond_latent_mean
+            else:
+                x_latent = x_latent * self.net.ori_latent_std + self.net.ori_latent_mean
+        model = self.vqgan
+        if self.model_config.latent_before_quant_conv:
+            x_latent = model.quant_conv(x_latent)
+        x_latent_quant, loss, _ = model.quantize(x_latent)
+        out = model.decode(x_latent_quant)
+        return out
+    
     def compute_label(self, step, x0, xt):
         """ Eq 12 """
         std_fwd = self.diffusion.get_std_fwd(step, xdim=x0.shape[1:])
@@ -148,6 +289,11 @@ class Runner(object):
             x1 = x1 + torch.randn_like(x1)
 
         assert x0.shape == x1.shape
+
+        if opt.latent_space:
+            x0 = self.encode(x0, cond=False)
+            x1 = self.encode(x1, cond=False)
+            cond = self.cond_stage_model(cond)
 
         return x0, x1, mask, y, cond
 
@@ -205,7 +351,7 @@ class Runner(object):
             if it % 10 == 0:
                 self.writer.add_scalar(it, 'loss', loss.detach())
 
-            if it % 500 == 0:
+            if it % 2000 == 0:
                 if opt.global_rank == 0:
                     torch.save({
                         "net": self.net.state_dict(),
@@ -225,7 +371,7 @@ class Runner(object):
         self.writer.close()
 
     @torch.no_grad()
-    def ddpm_sampling(self, opt, x1, y, mask=None, cond=None, clip_denoise=False, nfe=None, log_count=10, verbose=True):
+    def ddpm_sampling(self, opt, x1, y, mask=None, cond=None, clip_denoise=False, nfe=None, log_count=10, verbose=True, eval=False):
 
         # create discrete time steps that split [0, INTERVAL] into NFE sub-intervals.
         # e.g., if NFE=2 & INTERVAL=1000, then STEPS=[0, 500, 999] and 2 network
@@ -240,6 +386,10 @@ class Runner(object):
         assert log_steps[0] == 0
         self.log.info(f"[DDPM Sampling] steps={opt.interval}, {nfe=}, {log_steps=}!")
 
+        if opt.latent_space and eval:
+            x1 = self.encode(x1, cond=False)
+            cond = self.cond_stage_model(cond)
+            
         x1 = x1.to(opt.device)
         if cond is not None: cond = cond.to(opt.device)
         if mask is not None:
@@ -261,6 +411,11 @@ class Runner(object):
 
         b, *xdim = x1.shape
         assert xs.shape == pred_x0.shape == (b, log_count, *xdim)
+
+        if opt.latent_space and eval:
+            xs = xs[:, 0, ...].to(opt.device)
+            # xs = xs.squeeze(1)
+            xs = self.decode(xs, cond=False)
 
         return xs, pred_x0
 

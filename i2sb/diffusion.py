@@ -5,14 +5,57 @@
 # for I2SB. To view a copy of this license, see the LICENSE file.
 # ---------------------------------------------------------------
 
+import argparse
 import numpy as np
 from tqdm import tqdm
 from functools import partial
 import torch
+import omegaconf
+import yaml
 
 from .util import unsqueeze_xdim
+from i2sb.VQGAN.vqgan import VQModel
 
 from ipdb import set_trace as debug
+
+def disabled_train(self, mode=True):
+    """Overwrite model.train with this function to make sure train/eval mode
+    does not change anymore."""
+    return self
+
+def namespace2dict(config):
+    conf_dict = {}
+    for key, value in vars(config).items():
+        if isinstance(value, argparse.Namespace):
+            conf_dict[key] = namespace2dict(value)
+        else:
+            conf_dict[key] = value
+    return conf_dict
+
+def dict2namespace(config):
+    namespace = argparse.Namespace()
+    for key, value in config.items():
+        if isinstance(value, dict) or isinstance(value, omegaconf.dictconfig.DictConfig):
+            new_value = dict2namespace(value)
+        else:
+            new_value = value
+        setattr(namespace, key, new_value)
+    return namespace
+
+def create_model_config():
+    # --------------- basic ---------------
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config",         type=str,   default='C:\\Users\\User\\Desktop\\dev\\I2SB-flood\\configs\\flooding.yaml',        help="config file path")
+    
+    opt = parser.parse_args()
+    
+    with open(opt.config, 'r') as f:
+        dict_config = yaml.load(f, Loader=yaml.FullLoader)
+
+    namespace_config = dict2namespace(dict_config)
+    dict_config = namespace2dict(namespace_config)
+
+    return namespace_config.model
 
 def compute_gaussian_product_coef(sigma1, sigma2):
     """ Given p1 = N(x_t|x_0, sigma_1**2) and p2 = N(x_t|x_1, sigma_2**2)

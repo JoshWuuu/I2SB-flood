@@ -154,22 +154,22 @@ class floodDataset(Dataset):
     def __init__(self, opt, val=False, test=False):
         super(floodDataset, self).__init__()
         self.opt = opt
-        dem_path = 'C:\\Users\\User\\Desktop\\dev\\train\\dem.png'
+        dem_path = 'C:\\Users\\User\\Desktop\\dev\\new_train\\dem.png'
         self.dem = cv2.imread(dem_path)
         self.dem = cv2.cvtColor(self.dem, cv2.COLOR_BGR2GRAY)
         self.dem = cv2.cvtColor(self.dem, cv2.COLOR_GRAY2BGR)
         self.test = test
 
-        self.flood_path = 'C:\\Users\\User\\Desktop\\dev\\train\\tainan_png'
+        self.flood_path = 'C:\\Users\\User\\Desktop\\dev\\new_train\\tainan_png'
 
-        rainfall_path = 'C:\\Users\\User\\Desktop\\dev\\train\\train.csv'
+        rainfall_path = 'C:\\Users\\User\\Desktop\\dev\\new_train\\train.csv'
         if test:
-            rainfall_path = 'C:\\Users\\User\\Desktop\\dev\\test\\test.csv'
-            self.flood_path = 'C:\\Users\\User\\Desktop\\dev\\test\\TEST_png'
+            rainfall_path = 'C:\\Users\\User\\Desktop\\dev\\new_test\\test.csv'
+            self.flood_path = 'C:\\Users\\User\\Desktop\\dev\\new_test\\TEST_png'
 
         rainfall = pd.read_csv(rainfall_path)
         # remove first row, no 0 row 
-        rainfall = rainfall.iloc[1:, 1:]
+        rainfall = rainfall.iloc[:, :]
 
         # Initialize lists to store cell values and their positions
         rainfall_cum_value = []
@@ -178,6 +178,8 @@ class floodDataset(Dataset):
         val = False
         # Iterate through each column
         for col in rainfall.columns:
+            if col == 'time':
+                continue
             col_num = int(col.split("_")[1])
             if (val and col_num not in [2]) or (not val and col_num in []):
                 continue
@@ -189,10 +191,10 @@ class floodDataset(Dataset):
                 # make it a len 24 list if not append 0 in front
                 temp = [0] * (24 - len(cell_values))
                 temp.extend(cell_values)
-                # if len(temp) == 25:
-                #     temp = temp[1:]
+                if len(temp) == 25:
+                    temp = temp[1:]
                 rainfall_cum_value.append(temp)
-                cell_positions.append((col_num, row+1))
+                cell_positions.append((col_num, row))
 
         self.rainfall = rainfall_cum_value
         self.cell_positions = cell_positions
@@ -235,7 +237,7 @@ class floodDataset(Dataset):
         flood_image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
         
         # remove the fourth channel
-        flood_image = flood_image[:, :, 2]
+        # flood_image = flood_image[:, :, 2]
         # flood_image = cv2.cvtColor(flood_image, cv2.COLOR_BGR2GRAY)
         flood_image = cv2.cvtColor(flood_image, cv2.COLOR_GRAY2BGR)
         # IF FLOOD image not 256x256, print the shape and the image_path
