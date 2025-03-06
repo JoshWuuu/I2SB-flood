@@ -1,5 +1,5 @@
 # FloodDiff
-This is the private code base of FloodDiff, the paper is currently reviewed and the code is verified by ICCV.
+This is the code base of FloodDiff, the paper is currently reviewed and the code is verified by ICCV 2025.
 ## Requirements
 ```bash
 conda env create --file requirements.yaml python=3
