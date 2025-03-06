@@ -57,6 +57,7 @@ def create_training_options():
 
     # --------------- SB model ---------------
     parser.add_argument("--image-size",     type=int,   default=256)
+    parser.add_argument("--dataset-dir", type=Path, default="C:\\Users\\User\\Desktop\\dev\\new_train\\", help="path to dataset")
     parser.add_argument("--latent-space", action="store_true", default=True, help="use latent space model")
     parser.add_argument("--normalize-latent", action="store_true", default=False, help="normalize latent space")
     parser.add_argument("--corrupt",        type=str,   default='mixture',        help="restoration task")

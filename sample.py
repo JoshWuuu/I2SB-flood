@@ -233,7 +233,7 @@ if __name__ == '__main__':
     parser.add_argument("--eval",        action="store_true", default=True, help="")
     # data
     parser.add_argument("--image-size",     type=int,  default=256)
-    parser.add_argument("--dataset-dir",    type=Path, default="/dataset",  help="path to LMDB dataset")
+    parser.add_argument("--dataset-dir",    type=Path, default="/dataset",  help="path to dataset")
     parser.add_argument("--partition",      type=str,  default=None,        help="e.g., '0_4' means the first 25% of the dataset")
 
     # sample

@@ -154,18 +154,18 @@ class floodDataset(Dataset):
     def __init__(self, opt, val=False, test=False):
         super(floodDataset, self).__init__()
         self.opt = opt
-        dem_path = 'C:\\Users\\User\\Desktop\\dev\\new_train\\dem.png'
+        dem_path = opt.dataset_dir + 'dem.png'
         self.dem = cv2.imread(dem_path)
         self.dem = cv2.cvtColor(self.dem, cv2.COLOR_BGR2GRAY)
         self.dem = cv2.cvtColor(self.dem, cv2.COLOR_GRAY2BGR)
         self.test = test
 
-        self.flood_path = 'C:\\Users\\User\\Desktop\\dev\\new_train\\tainan_png'
+        self.flood_path = opt.dataset_dir + 'tainan_png'
 
-        rainfall_path = 'C:\\Users\\User\\Desktop\\dev\\new_train\\train.csv'
+        rainfall_path = opt.dataset_dir + 'train.csv'
         if test:
-            rainfall_path = 'C:\\Users\\User\\Desktop\\dev\\new_test\\test.csv'
-            self.flood_path = 'C:\\Users\\User\\Desktop\\dev\\new_test\\TEST_png'
+            rainfall_path = opt.dataset_dir + 'test.csv'
+            self.flood_path = opt.dataset_dir + 'TEST_png'
 
         rainfall = pd.read_csv(rainfall_path)
         # remove first row, no 0 row 
