@@ -7,7 +7,7 @@ conda activate flooddiff
 ```
 This code was built and tested with python 3.8 and torch 2.1.0
 ## Dataset
-The training and testing images are provided in [link](https://drive.google.com/drive/folders/1N9ZAvTmtkQih-eYWm47XlJhUIwKmya3U?usp=sharing).
+The training, testing dataset (include time series rainfall) and evaluation images for the results in the paper are provided in [link](https://drive.google.com/drive/folders/1N9ZAvTmtkQih-eYWm47XlJhUIwKmya3U?usp=sharing).
 ## FloodDiff Training
 
 ```
