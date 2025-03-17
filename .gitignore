@@ -140,3 +140,4 @@ results/*
 .debug/*
 *.pth
 *.ckpt
+*.png

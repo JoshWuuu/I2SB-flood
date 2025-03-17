@@ -132,6 +132,7 @@ class MixtureCorruptDatasetTrain(Dataset):
         assert corrupt_img.shape == clean_img.shape, (clean_img.shape, corrupt_img.shape)
         return clean_img, corrupt_img, y
 
+from pathlib import Path
 class MixtureCorruptDatasetVal(Dataset):
     def __init__(self, opt, dataset):
         super(MixtureCorruptDatasetVal, self).__init__()
@@ -154,18 +155,23 @@ class floodDataset(Dataset):
     def __init__(self, opt, val=False, test=False):
         super(floodDataset, self).__init__()
         self.opt = opt
-        dem_path = opt.dataset_dir + 'dem.png'
-        self.dem = cv2.imread(dem_path)
-        self.dem = cv2.cvtColor(self.dem, cv2.COLOR_BGR2GRAY)
-        self.dem = cv2.cvtColor(self.dem, cv2.COLOR_GRAY2BGR)
+        dem_path = Path(opt.dataset_dir) / 'dem_png'
+        # list all the subfolder in the dem_path, for example subfolder is 1, 2, 3 then return me [1, 2, 3]
+        
+        self.dem_stat = Path(opt.dataset_dir) / 'dem_png/elevation_stats.csv'
+        self.dem_stat = pd.read_csv(self.dem_stat)
+        # self.dem = cv2.imread(dem_path)
+        # self.dem = cv2.cvtColor(self.dem, cv2.COLOR_BGR2GRAY)
+        # self.dem = cv2.cvtColor(self.dem, cv2.COLOR_GRAY2BGR)
         self.test = test
 
-        self.flood_path = opt.dataset_dir + 'tainan_png'
-
-        rainfall_path = opt.dataset_dir + 'train.csv'
+        self.flood_path = Path(opt.dataset_dir) / 'DEPTH_png'
+        dem_folder = [int(f) for f in os.listdir(self.flood_path) if os.path.isdir(os.path.join(self.flood_path, f))]
+        rainfall_path = Path(opt.dataset_dir) / 'scenario_rainfall.csv'
         if test:
-            rainfall_path = opt.dataset_dir + 'test.csv'
-            self.flood_path = opt.dataset_dir + 'TEST_png'
+            dem_folder = [61, 62, 65, 67, 69]
+            rainfall_path = Path(opt.dataset_dir) / 'scenario_rainfall.csv'
+            self.flood_path = 'C:\\Users\\User\\Desktop\\dev\\test_dem'
 
         rainfall = pd.read_csv(rainfall_path)
         # remove first row, no 0 row 
@@ -177,24 +183,26 @@ class floodDataset(Dataset):
 
         val = False
         # Iterate through each column
-        for col in rainfall.columns:
-            if col == 'time':
-                continue
-            col_num = int(col.split("_")[1])
-            if (val and col_num not in [2]) or (not val and col_num in []):
-                continue
-            cell_values = []
-            # Iterate through each row in the current column
-            for row in range(len(rainfall)):
-                cell_value = rainfall.iloc[row][col]
-                cell_values.append(np.floor(cell_value))
-                # make it a len 24 list if not append 0 in front
-                temp = [0] * (24 - len(cell_values))
-                temp.extend(cell_values)
-                if len(temp) == 25:
-                    temp = temp[1:]
-                rainfall_cum_value.append(temp)
-                cell_positions.append((col_num, row))
+        for dem_num in dem_folder:
+            for col in rainfall.columns:
+                if col == 'time':
+                    continue
+                col_num = int(col.split("_")[1])
+                if (val and col_num not in [2]) or (not val and col_num in []):
+                    continue
+                cell_values = []
+                # Iterate through each row in the current column
+                for row in range(len(rainfall)):
+                    cell_value = rainfall.iloc[row][col]
+                    cell_values.append(np.floor(cell_value))
+                    # make it a len 24 list if not append 0 in front
+                    temp = [0] * (24 - len(cell_values))
+                    temp.extend(cell_values)
+                    if len(temp) == 25:
+                        temp = temp[1:]
+                    rainfall_cum_value.append(temp)
+                    # col_num is the rainfall index, and row is the time index
+                    cell_positions.append((dem_num, col_num, row))   
 
         self.rainfall = rainfall_cum_value
         self.cell_positions = cell_positions
@@ -205,8 +213,9 @@ class floodDataset(Dataset):
             # T.Lambda(lambda t: (t * 2) - 1)
         ])
 
-    def __find_image(self, cell_position, flood_path):
-        col, row = cell_position
+    def __find_flood_image(self, cell_position, flood_path):
+        dem, col, row = cell_position
+        dem_folder_name = str(dem)
         if col < 100:
             folder_name = f"RF{col:02d}"
         else:
@@ -216,23 +225,39 @@ class floodDataset(Dataset):
                 folder_name = f"RF{col:02d}"
             else:
                 folder_name = f"RF{col}"
-        image_name = f"{folder_name}_d_{row:03d}_00.png"
-        image_path = os.path.join(flood_path, folder_name, image_name)
+        image_name = f"{dem_folder_name}_{folder_name}_{row:03d}.png"
+        image_path = os.path.join(flood_path, dem_folder_name, folder_name, image_name)
         return image_path
-
+    
+    def __find_dem_image(self, cell_position):
+        dem_num = cell_position[0]
+        dem_folder = Path(self.opt.dataset_dir) /  'dem_png'
+        dem_path = os.path.join(dem_folder, f'{dem_num}.png')
+        return dem_path
+    
     def __len__(self):
         return len(self.cell_positions)
 
     def __getitem__(self, index):
-        dem_image = self.dem
+        cell_position = self.cell_positions[index]
         rainfall = self.rainfall[index]
-
+        dem_path = self.__find_dem_image(cell_position)
+        dem_image = cv2.imread(dem_path, cv2.IMREAD_UNCHANGED)[:,:,0]
+        dem_image = cv2.cvtColor(dem_image, cv2.COLOR_GRAY2BGR)
+        dem_cur_state = self.dem_stat[self.dem_stat['Filename'] == cell_position[0]]
+        min_elev = int(dem_cur_state['Min Elevation'])
+        max_elev = int(dem_cur_state['Max Elevation'])
+        # do a normalization with max = 410 min = -3, with current max = max_elev, min = min_elev
+        real_height = dem_image / 255 * (max_elev - min_elev) + min_elev
+        dem_image = (real_height - (-3)) / (51 + 3) * 255
+        # clamp dem_image to 0-255
+        dem_image = np.clip(dem_image, 0, 255)
+        dem_image = np.array(dem_image, dtype=np.uint8)
+        
         rainfall = np.array(rainfall, dtype=np.int64)
         # rainfall = rainfall.reshape(1, 24)
-        
-        cell_position = self.cell_positions[index]
 
-        image_path = self.__find_image(cell_position, self.flood_path)
+        image_path = self.__find_flood_image(cell_position, self.flood_path)
 
         flood_image = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
         

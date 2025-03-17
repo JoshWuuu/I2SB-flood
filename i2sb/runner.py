@@ -364,10 +364,10 @@ class Runner(object):
                 if opt.distributed:
                     torch.distributed.barrier()
 
-            if it == 500 or it % 3000 == 0: # 0, 0.5k, 3k, 6k 9k
-                net.eval()
-                self.evaluation(opt, it, val_loader, corrupt_method)
-                net.train()
+            # if it == 500 or it % 3000 == 0: # 0, 0.5k, 3k, 6k 9k
+            #     net.eval()
+            #     self.evaluation(opt, it, val_loader, corrupt_method)
+            #     net.train()
         self.writer.close()
 
     @torch.no_grad()

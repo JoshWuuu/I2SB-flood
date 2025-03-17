@@ -233,13 +233,13 @@ if __name__ == '__main__':
     parser.add_argument("--eval",        action="store_true", default=True, help="")
     # data
     parser.add_argument("--image-size",     type=int,  default=256)
-    parser.add_argument("--dataset-dir",    type=Path, default="/dataset",  help="path to dataset")
+    parser.add_argument("--dataset-dir",    type=Path, default="C:\\Users\\User\\Desktop\\dev\\50PNG\\",  help="path to dataset")
     parser.add_argument("--partition",      type=str,  default=None,        help="e.g., '0_4' means the first 25% of the dataset")
 
     # sample
     parser.add_argument("--batch-size",     type=int,  default=20)
-    parser.add_argument("--ckpt",           type=str,  default='C:\\Users\\User\\Desktop\\dev\\I2SB-flood\\results\\flood-latent-new-b4',        help="the checkpoint name from which we wish to sample")
-    parser.add_argument("--nfe",            type=int,  default=1,        help="sampling steps")
+    parser.add_argument("--ckpt",           type=str,  default='C:\\Users\\User\\Desktop\\dev\\I2SB-flood\\results\\flood-latent-dems-b4',        help="the checkpoint name from which we wish to sample")
+    parser.add_argument("--nfe",            type=int,  default=100,        help="sampling steps")
     parser.add_argument("--clip-denoise",   action="store_true",            help="clamp predicted image to [-1,1] at each")
     parser.add_argument("--use-fp16",       action="store_true",            help="use fp16 network weight for faster sampling")
 

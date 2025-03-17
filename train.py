@@ -45,7 +45,7 @@ def create_training_options():
     # --------------- basic ---------------
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed",           type=int,   default=0)
-    parser.add_argument("--name",           type=str,   default='flood-latent-new-b4',        help="experiment ID")
+    parser.add_argument("--name",           type=str,   default='flood-latent-dems-b4',        help="experiment ID")
     parser.add_argument("--ckpt",           type=str,   default=None,        help="resumed checkpoint name")
     parser.add_argument("--gpu",            type=int,   default=0,        help="set only if you wish to run on a particular device")
     parser.add_argument("--n-gpu-per-node", type=int,   default=1,           help="number of gpu on each node")
@@ -57,7 +57,7 @@ def create_training_options():
 
     # --------------- SB model ---------------
     parser.add_argument("--image-size",     type=int,   default=256)
-    parser.add_argument("--dataset-dir", type=Path, default="C:\\Users\\User\\Desktop\\dev\\new_train\\", help="path to dataset")
+    parser.add_argument("--dataset-dir", type=Path, default="C:\\Users\\User\\Desktop\\dev\\50PNG\\", help="path to dataset")
     parser.add_argument("--latent-space", action="store_true", default=True, help="use latent space model")
     parser.add_argument("--normalize-latent", action="store_true", default=False, help="normalize latent space")
     parser.add_argument("--corrupt",        type=str,   default='mixture',        help="restoration task")
@@ -75,7 +75,7 @@ def create_training_options():
 
     # --------------- optimizer and loss ---------------
     parser.add_argument("--batch-size",     type=int,   default=4)
-    parser.add_argument("--microbatch",     type=int,   default=4,           help="accumulate gradient over microbatch until full batch-size")
+    parser.add_argument("--microbatch",     type=int,   default=2,           help="accumulate gradient over microbatch until full batch-size")
     parser.add_argument("--num-itr",        type=int,   default=1000000,     help="training iteration")
     parser.add_argument("--lr",             type=float, default=5e-5,        help="learning rate")
     parser.add_argument("--lr-gamma",       type=float, default=0.99,        help="learning rate decay ratio")
@@ -84,7 +84,7 @@ def create_training_options():
     parser.add_argument("--ema",            type=float, default=0.999)
 
     # --------------- path and logging ---------------
-    parser.add_argument("--dataset-dir",    type=Path,  default="/dataset",  help="path to LMDB dataset")
+    # parser.add_argument("--dataset-dir",    type=Path,  default="/dataset",  help="path to LMDB dataset")
     parser.add_argument("--log-dir",        type=Path,  default=".log",      help="path to log std outputs and writer data")
     parser.add_argument("--log-writer",     type=str,   default='tensorbard',        help="log writer: can be tensorbard, wandb, or None")
     parser.add_argument("--wandb-api-key",  type=str,   default=None,        help="unique API key of your W&B account; see https://wandb.ai/authorize")
